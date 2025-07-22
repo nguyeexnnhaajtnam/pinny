@@ -70,4 +70,52 @@ Add real-time location sharing endpoints and comprehensive Postman collection fo
 - Include detailed usage guide and examples
 - Add automated test script for all API functionality
 - Complete backend API implementation for Pinny app
+```
+
+---
+
+# Frontend Web Commit Message
+
+## Title
+```
+feat: Add social login buttons with Ant Design icons to login page
+```
+
+## Description
+```
+✨ Enhance login page with social authentication options
+
+### 🚀 New Features
+- Add Google, Facebook, and Apple social login buttons to the login page
+- Use Ant Design icons for consistent and modern UI
+- Visually separate social login options from email/password form
+- Placeholder onClick handlers for social logins (to be implemented)
+
+### 📁 Files Updated
+- frontend-web/src/app/login/page.tsx - Add and style social login buttons, import Ant Design icons
+
+### 💄 UI/UX Improvements
+- Improved login page layout for better user experience
+- Clear distinction between traditional and social login methods
+
+### 🧩 Dependencies
+- Requires @ant-design/icons (run `npm install @ant-design/icons` if not already installed)
+
+### 📝 Next Steps
+- Implement actual authentication logic for Google, Facebook, and Apple logins
+- Connect social login buttons to backend or third-party auth providers
+```
+
+## Alternative Short Title
+```
+feat: Add Google, Facebook, Apple login buttons (AntD icons)
+```
+
+## Alternative Description
+```
+Add social login options to the login page using Ant Design icons
+
+- Google, Facebook, and Apple login buttons with modern UI
+- Placeholder handlers for future integration
+- Improved user experience on login page
 ``` 
