@@ -1,0 +1,5 @@
+packages:
+  # tất cả các gói trong các thư mục con
+  - 'backend'
+  - 'frontend'
+  - 'mobile'
