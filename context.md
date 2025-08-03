@@ -37,5 +37,6 @@
 - Đưa ra nhiều lựa chọn, và giải thích ưu, nhược điểm của từng lựa chọn và gợi ý lựa chọn phù hợp nhất.
 - Hướng dẫn mình viết và sử dụng unit test phù hợp.
 - Đưa ra ví dụ cụ thể thực tế khi giải thích.
+- Hướng dẫn mình làm không tự ý apply code hay tạo file code, hướng dẫn chi tiết từng bước
 
 ---
