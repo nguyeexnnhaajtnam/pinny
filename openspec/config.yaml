@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  Pinny is the AI intelligence layer for Pinus.
+
+  Architecture:
+  - Pinus mobile: Flutter
+  - Pinus backend: NestJS
+  - Pinny backend: Python + FastAPI
+  - Database: PostgreSQL
+  - Vector search: pgvector
+  - LLM provider: OpenAI
+  - AI orchestration: LangChain / LangGraph when justified
+
+  Core principles:
+  - Pinny is not only a chatbot or RAG application.
+  - Use deterministic tools for structured Pinus data.
+  - Use RAG for semantic and unstructured retrieval.
+  - Files are generic inputs; architecture must not depend on a specific format.
+  - Keep Pinny independent from the Pinus backend.
+  - Prefer simple architecture before adding distributed infrastructure.
+
+rules:
+  proposal:
+    - Keep each change focused on one coherent capability.
+    - Explicitly state out-of-scope items.
+  design:
+    - Prefer the simplest architecture satisfying the requirements.
+    - Do not introduce Redis, Celery, LangGraph, or vector search without a concrete requirement.
+    - Separate verified structured data from LLM-generated interpretations.
+  specs:
+    - Requirements must be testable.
+    - Include failure and edge-case scenarios.
+  tasks:
+    - Tasks must be independently verifiable where practical.
