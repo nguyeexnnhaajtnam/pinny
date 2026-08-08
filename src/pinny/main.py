@@ -13,6 +13,7 @@ from pinny.core.logging import configure_logging
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     settings = get_settings()
+    settings.validate_active_llm()
     configure_logging(settings.log_level)
     logging.getLogger(__name__).info(
         "Application started", extra={"context": {"environment": settings.environment}}

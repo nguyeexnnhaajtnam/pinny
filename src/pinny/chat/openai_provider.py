@@ -34,6 +34,8 @@ class OpenAIChatModel:
 
     async def stream(self, messages: list[ChatMessage], user_id: str) -> AsyncIterator[str]:
         stream = None
+        completed = False
+        yielded_text = False
         try:
             stream = await self._client.responses.create(
                 model=self._model,
@@ -45,9 +47,15 @@ class OpenAIChatModel:
             )
             async for event in stream:
                 if event.type == "response.output_text.delta":
-                    yield event.delta
+                    if event.delta:
+                        yielded_text = True
+                        yield event.delta
+                elif event.type == "response.completed":
+                    completed = True
                 elif event.type in {"response.failed", "response.incomplete", "error"}:
                     raise ProviderError("OpenAI generation did not complete")
+            if not completed or not yielded_text:
+                raise ProviderError("OpenAI generation did not complete")
         except APITimeoutError as exc:
             self._log_failure(exc)
             raise ProviderTimeoutError from exc

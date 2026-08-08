@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from pinny.chat.identity import DevelopmentCurrentUserProvider
-from pinny.chat.openai_provider import OpenAIChatModel
+from pinny.chat.provider_factory import create_chat_model
 from pinny.chat.repository import SqlAlchemyChatRepository
 from pinny.chat.service import ChatService
 from pinny.chat.types import PreparedChat
@@ -36,7 +36,7 @@ async def get_current_user_id(
 def get_chat_service() -> ChatService:
     settings = get_settings()
     repository = SqlAlchemyChatRepository(session_factory, settings)
-    model = OpenAIChatModel(settings)
+    model = create_chat_model(settings)
     return ChatService(repository, model, settings.chat_max_context_characters)
 
 

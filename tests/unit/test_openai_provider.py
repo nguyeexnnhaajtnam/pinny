@@ -107,6 +107,27 @@ async def test_incomplete_response_is_sanitized_and_stream_closes() -> None:
     assert stream.closed
 
 
+@pytest.mark.parametrize(
+    "events",
+    [
+        [],
+        [SimpleNamespace(type="response.completed")],
+        [SimpleNamespace(type="response.output_text.delta", delta="partial")],
+        [SimpleNamespace(type="error")],
+    ],
+)
+async def test_missing_text_or_successful_terminal_event_fails(events) -> None:
+    stream = FakeStream(events)
+    model = OpenAIChatModel(
+        configured_settings(), client=SimpleNamespace(responses=FakeResponses(stream))
+    )
+    with pytest.raises(ProviderError):
+        _ = [
+            chunk async for chunk in model.stream([ChatMessage(role="user", content="hi")], "user")
+        ]
+    assert stream.closed
+
+
 async def test_timeout_is_mapped_to_stable_provider_error() -> None:
     model = OpenAIChatModel(
         configured_settings(), client=SimpleNamespace(responses=FailingResponses())

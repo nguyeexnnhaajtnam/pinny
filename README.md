@@ -17,8 +17,10 @@ and future intelligence capabilities behind explicit boundaries.
 
 Requirements: Python 3.12+ for host development, or Docker with Compose.
 
-Copy `.env.example` to `.env` and adjust values. Never commit `.env`. Set
-`PINNY_OPENAI_API_KEY` only in that file or a deployment secret store.
+Copy `.env.example` to `.env` and adjust values. Never commit `.env`. Select one provider with
+`LLM_PROVIDER=openai` or `LLM_PROVIDER=gemini`, then configure only its required key and model.
+Use `PINNY_OPENAI_API_KEY` for OpenAI or `GEMINI_API_KEY` for Gemini. Keep keys only in `.env`
+or a deployment secret store; changing provider configuration requires a service restart.
 `PINNY_DEV_USER_ID` is a **non-production identity shortcut**; production configuration rejects
 the development identity provider. Replace it with trusted Pinus authentication before launch.
 
@@ -82,7 +84,12 @@ persistence dependencies use sanitized 503 errors. Failed and disconnected gener
 curl -N -H "Content-Type: application/json" -d '{"message":"Hello Pinny"}' http://localhost:8000/api/v1/chat
 ```
 
-Never log or return the OpenAI key, provider response bodies, prompts, or message content.
+Never log or return provider keys, provider response bodies, prompts, or message content.
+
+Both providers use the same chat endpoint, SSE events, and PostgreSQL lifecycle. Provider
+selection happens once during application startup; invalid provider values or missing settings
+for the selected provider prevent startup. Credentials for the inactive provider are optional.
+There is no automatic routing, fallback, or load balancing.
 
 ## Quality and migrations
 
@@ -93,9 +100,20 @@ pytest
 ```
 
 Unit tests do not need PostgreSQL. For integration tests, configure `PINNY_DATABASE_*`, migrate
-an isolated database, then set `PINNY_RUN_INTEGRATION=1`. Provider tests use mocked OpenAI
-streams and require no real key. The containerized API/SSE smoke test is
+an isolated database, then set `PINNY_RUN_INTEGRATION=1`. Provider tests use mocked OpenAI and
+Gemini streams and require no real key. The API/SSE contract test is
 `pytest tests/unit/test_chat_api.py`.
+
+For an opt-in real-provider smoke test, place the selected credential only in `.env`, restart
+with `docker compose up -d --build`, and call the endpoint without putting a key in the command:
+
+```console
+curl -N -H "Content-Type: application/json" -d '{"message":"Reply with one short sentence"}' http://localhost:8000/api/v1/chat
+docker compose exec postgres psql -U pinny -d pinny -c "SELECT role,status,content FROM messages ORDER BY created_at DESC LIMIT 2;"
+```
+
+Expect a terminal `completed` SSE event and completed user/assistant rows. A provider error or
+disconnect must leave the assistant row `failed` or `interrupted`, never `completed`.
 
 Validate downgrade behavior only against an empty disposable database:
 
@@ -103,4 +121,11 @@ Validate downgrade behavior only against an empty disposable database:
 alembic upgrade head
 alembic downgrade base
 alembic upgrade head
+```
+
+```command test model
+curl.exe -N `
+  -X POST "http://localhost:8000/api/v1/chat" `
+  -H "Content-Type: application/json" `
+  --data-binary "@request.json"
 ```

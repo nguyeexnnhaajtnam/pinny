@@ -3,7 +3,7 @@
 ## System context
 
 ```text
-Pinus Flutter → Pinus NestJS → Pinny FastAPI → OpenAI
+Pinus Flutter → Pinus NestJS → Pinny FastAPI → OpenAI or Gemini
                                   ↓
                               PostgreSQL
 ```
@@ -19,8 +19,10 @@ access must use trusted, defined interfaces.
   assistant lifecycle rules, and provider-neutral ports.
 - **Identity adapter** currently resolves `PINNY_DEV_USER_ID`. It is development-only and can be
   replaced by trusted Pinus authentication without changing the chat use case.
-- **LLM adapter** maps the OpenAI Responses stream to text deltas and sanitized application
-  errors. OpenAI SDK types and credentials do not escape this boundary.
+- **LLM provider factory** selects OpenAI or Gemini once from validated startup configuration.
+  `ChatService` receives only the provider-neutral model port and contains no vendor branching.
+- **LLM adapters** map vendor streams and terminal states to ordered text deltas and sanitized
+  application errors. SDK types, credentials, and response bodies do not escape this boundary.
 - **Persistence adapter (`db`)** uses SQLAlchemy async sessions and PostgreSQL. Alembic owns
   schema evolution; repositories enforce conversation ownership in their queries.
 
@@ -37,11 +39,12 @@ are recovered as interrupted.
 
 ## Security boundary
 
-OpenAI credentials are server-only secret settings. Public requests cannot supply identity or
-model choice. Logs omit prompts/message content and redact secrets/provider details. The
+Provider credentials are server-only secret settings. Public requests cannot supply identity,
+provider, or model choice. Logs omit prompts/message content and redact secrets/provider details. The
 development identity provider is rejected in production configuration.
 
 ## Phase 1 exclusions
 
-No LangChain, LangGraph, RAG, embeddings, pgvector retrieval, Pinus tool calling, file handling,
-personal memory, recommendation pipelines, Redis, or Celery are introduced by core AI chat.
+No provider fallback, automatic routing, load balancing, LangChain, LangGraph, RAG, embeddings,
+pgvector retrieval, Pinus tool calling, file handling, personal memory, recommendation pipelines,
+Redis, or Celery are introduced.

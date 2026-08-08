@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from pinny.core.config import Settings
+from pinny.core.config import LLMProvider, Settings
 
 
 def test_settings_have_safe_local_defaults(monkeypatch) -> None:
@@ -23,6 +23,21 @@ def test_openai_secret_is_masked() -> None:
     settings = Settings(_env_file=None, openai_api_key="private-key")
 
     assert "private-key" not in repr(settings)
+
+
+def test_provider_environment_aliases_are_case_normalized(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "GeMiNi")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-private")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test")
+    settings = Settings(_env_file=None)
+    assert settings.llm_provider is LLMProvider.GEMINI
+    assert settings.gemini_model == "gemini-test"
+    assert "gemini-private" not in repr(settings)
+
+
+def test_unsupported_provider_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="openai.*gemini"):
+        Settings(_env_file=None, llm_provider="unknown")
 
 
 def test_development_identity_must_be_non_empty() -> None:
