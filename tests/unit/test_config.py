@@ -11,6 +11,9 @@ def test_settings_have_safe_local_defaults(monkeypatch) -> None:
     assert settings.environment == "development"
     assert settings.database_host == "localhost"
     assert settings.database_connect_timeout > 0
+    assert settings.chat_history_max_messages == 20
+    assert settings.chat_timezone == "Asia/Ho_Chi_Minh"
+    assert settings.chat_retry_attempts >= 1
 
 
 def test_settings_load_prefixed_environment(monkeypatch) -> None:

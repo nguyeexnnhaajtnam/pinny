@@ -4,13 +4,13 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from pinny.api.chat import event_stream, get_chat_service_factory, get_current_user_id
-from pinny.chat.types import ChatEvent, PreparedChat
+from pinny.chat.types import ChatEvent, ChatMessage, PreparedChat
 from pinny.main import app
 
 
 class FakeService:
     def __init__(self) -> None:
-        self.prepared = PreparedChat(uuid4(), uuid4(), uuid4(), [])
+        self.prepared = PreparedChat(uuid4(), uuid4(), uuid4(), [], ChatMessage("user", "hello"))
         self.prepare_args = None
         self.interrupted = False
 
@@ -27,7 +27,12 @@ class FakeService:
             },
         )
         yield ChatEvent(
-            "delta", {"conversation_id": str(prepared.conversation_id), "content": "hi"}
+            "delta",
+            {
+                "conversation_id": str(prepared.conversation_id),
+                "message_id": str(prepared.assistant_message_id),
+                "content": "hi",
+            },
         )
         yield ChatEvent(
             "completed",
@@ -74,12 +79,17 @@ def test_chat_api_emits_terminal_error_without_completion() -> None:
     async def failed_stream(prepared, _user_id):
         yield ChatEvent(
             "delta",
-            {"conversation_id": str(prepared.conversation_id), "content": "part"},
+            {
+                "conversation_id": str(prepared.conversation_id),
+                "message_id": str(prepared.assistant_message_id),
+                "content": "part",
+            },
         )
         yield ChatEvent(
             "error",
             {
                 "conversation_id": str(prepared.conversation_id),
+                "message_id": str(prepared.assistant_message_id),
                 "code": "provider_error",
                 "message": "Assistant generation failed",
             },

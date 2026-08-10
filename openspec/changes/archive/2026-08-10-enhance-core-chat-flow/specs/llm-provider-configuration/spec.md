@@ -1,44 +1,4 @@
-# LLM Provider Configuration Specification
-
-## Purpose
-
-This capability lets Pinny operators select a supported language-model provider through secure, validated server configuration while presenting one stable streaming contract to chat behavior.
-
-## Requirements
-
-### Requirement: Active LLM provider is selected through configuration
-The system MUST select exactly one active language-model provider from server-side configuration and MUST support the values `openai` and `gemini`.
-
-#### Scenario: OpenAI is selected
-- **WHEN** `LLM_PROVIDER` is configured as `openai` with valid active-provider settings
-- **THEN** the system MUST construct and use the OpenAI provider for chat generation
-
-#### Scenario: Gemini is selected
-- **WHEN** `LLM_PROVIDER` is configured as `gemini` with valid active-provider settings
-- **THEN** the system MUST construct and use the Gemini provider for chat generation
-
-#### Scenario: Provider is unsupported
-- **WHEN** `LLM_PROVIDER` contains an unsupported value
-- **THEN** configuration validation or application startup MUST fail with a clear sanitized error
-
-### Requirement: Active-provider configuration is validated securely
-The system MUST require the API credential and model configuration needed by the selected provider, MUST keep credentials server-side, and MUST NOT require credentials for an inactive provider.
-
-#### Scenario: Active provider credential is missing
-- **WHEN** the selected provider has no non-empty API key configured
-- **THEN** configuration validation or application startup MUST fail before accepting chat traffic
-
-#### Scenario: Active provider model is missing
-- **WHEN** the selected provider has no valid model configured
-- **THEN** configuration validation or application startup MUST fail clearly
-
-#### Scenario: Inactive provider credential is absent
-- **WHEN** the selected provider is valid and fully configured but the inactive provider has no credential
-- **THEN** the service MUST start without requiring the inactive provider credential
-
-#### Scenario: Configuration is exposed externally
-- **WHEN** clients receive API responses or operators inspect ordinary application logs
-- **THEN** provider API credentials MUST NOT appear in responses or plaintext logs
+## ADDED Requirements
 
 ### Requirement: Provider failures are normalized before application handling
 Each supported provider MUST translate authentication, rate-limit, timeout, unavailability, invalid-request, and unexpected provider failures into stable provider-neutral application errors before they reach chat orchestration.
@@ -82,6 +42,8 @@ The system MUST apply explicit configurable provider timeouts and MUST retry onl
 - **WHEN** timeout, retry count, or retry delay configuration is outside documented bounds
 - **THEN** configuration validation or startup MUST fail clearly
 
+## MODIFIED Requirements
+
 ### Requirement: Supported providers expose equivalent application streaming behavior
 Each supported provider MUST expose ordered text deltas, a terminal outcome, normalized generation metadata, timeout, failure, and cancellation through the same provider-neutral application contract.
 
@@ -100,14 +62,3 @@ Each supported provider MUST expose ordered text deltas, a terminal outcome, nor
 #### Scenario: Provider stream is cancelled
 - **WHEN** the application cancels consumption before generation completes
 - **THEN** the provider boundary MUST propagate cancellation and close provider streaming resources without reporting successful completion
-
-### Requirement: Provider selection does not alter the chat contract
-Changing the configured provider MUST NOT change the public chat request schema, SSE event schema, conversation ownership rules, or persistence lifecycle.
-
-#### Scenario: Provider is changed between deployments
-- **WHEN** an operator changes the valid active provider and restarts the service
-- **THEN** clients MUST continue using the same chat endpoint and SSE event contract
-
-#### Scenario: Chat application invokes generation
-- **WHEN** chat generation begins with either supported provider selected
-- **THEN** application orchestration MUST invoke the provider-neutral contract without provider-specific branching

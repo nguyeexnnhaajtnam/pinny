@@ -10,7 +10,7 @@ from pinny.chat.errors import (
     GenerationInProgressError,
     PersistenceError,
 )
-from pinny.chat.types import ChatMessage, PreparedChat
+from pinny.chat.types import ChatMessage, GenerationMetadata, PreparedChat
 from pinny.core.config import Settings
 from pinny.db.models import Conversation, Message
 
@@ -21,6 +21,7 @@ class SqlAlchemyChatRepository:
     ) -> None:
         self._sessions = session_factory
         self._stale_after = timedelta(seconds=settings.chat_stale_generation_seconds)
+        self._history_limit = settings.chat_history_max_messages
 
     async def prepare(
         self, user_id: str, message: str, conversation_id: UUID | None
@@ -35,16 +36,16 @@ class SqlAlchemyChatRepository:
                         .where(
                             Message.conversation_id == conversation.id,
                             Message.role == "assistant",
-                            Message.status == "in_progress",
+                            Message.status.in_(("pending", "streaming")),
                             Message.created_at < stale_before,
                         )
-                        .values(status="interrupted")
+                        .values(status="cancelled")
                     )
                     active = await session.scalar(
                         select(Message.id).where(
                             Message.conversation_id == conversation.id,
                             Message.role == "assistant",
-                            Message.status == "in_progress",
+                            Message.status.in_(("pending", "streaming")),
                         )
                     )
                     if active is not None:
@@ -62,27 +63,32 @@ class SqlAlchemyChatRepository:
                         conversation_id=conversation.id,
                         role="assistant",
                         content="",
-                        status="in_progress",
+                        status="pending",
                         created_at=message_time + timedelta(microseconds=1),
                     )
                     session.add_all([user_message, assistant_message])
                     await session.flush()
-                    rows = (
+                    rows = list(
                         await session.execute(
                             select(Message.role, Message.content)
                             .where(
                                 Message.conversation_id == conversation.id,
                                 Message.status == "completed",
+                                Message.id != user_message.id,
                             )
-                            .order_by(Message.created_at, Message.id)
+                            .order_by(Message.created_at.desc(), Message.id.desc())
+                            .limit(self._history_limit)
                         )
-                    ).all()
-                    history = [ChatMessage(role=role, content=content) for role, content in rows]
+                    )
+                    history = [
+                        ChatMessage(role=role, content=content) for role, content in reversed(rows)
+                    ]
                     prepared = PreparedChat(
                         conversation_id=conversation.id,
                         user_message_id=user_message.id,
                         assistant_message_id=assistant_message.id,
                         history=history,
+                        current_user_message=ChatMessage(role="user", content=message),
                     )
                 return prepared
             except (ConversationNotFoundError, GenerationInProgressError):
@@ -109,7 +115,25 @@ class SqlAlchemyChatRepository:
             raise ConversationNotFoundError
         return conversation
 
-    async def complete(self, prepared: PreparedChat, content: str) -> None:
+    async def mark_streaming(self, assistant_message_id: UUID) -> None:
+        async with self._sessions() as session:
+            try:
+                async with session.begin():
+                    result = await session.execute(
+                        update(Message)
+                        .where(Message.id == assistant_message_id, Message.status == "pending")
+                        .values(status="streaming")
+                    )
+                    if result.rowcount != 1:
+                        raise PersistenceError("assistant message is no longer pending")
+            except PersistenceError:
+                raise
+            except SQLAlchemyError as exc:
+                raise PersistenceError from exc
+
+    async def complete(
+        self, prepared: PreparedChat, content: str, metadata: GenerationMetadata
+    ) -> None:
         async with self._sessions() as session:
             try:
                 async with session.begin():
@@ -117,9 +141,17 @@ class SqlAlchemyChatRepository:
                         update(Message)
                         .where(
                             Message.id == prepared.assistant_message_id,
-                            Message.status == "in_progress",
+                            Message.status == "streaming",
                         )
-                        .values(content=content, status="completed")
+                        .values(
+                            content=content,
+                            status="completed",
+                            provider=metadata.provider,
+                            model=metadata.model,
+                            latency_ms=metadata.latency_ms,
+                            input_tokens=metadata.input_tokens,
+                            output_tokens=metadata.output_tokens,
+                        )
                     )
                     if result.rowcount != 1:
                         raise PersistenceError("assistant message is no longer active")
@@ -133,8 +165,13 @@ class SqlAlchemyChatRepository:
             except SQLAlchemyError as exc:
                 raise PersistenceError from exc
 
-    async def fail(self, assistant_message_id: UUID, status: str) -> None:
-        if status not in {"failed", "interrupted"}:
+    async def terminate(
+        self,
+        assistant_message_id: UUID,
+        status: str,
+        metadata: GenerationMetadata | None = None,
+    ) -> None:
+        if status not in {"failed", "cancelled"}:
             raise ValueError("invalid terminal assistant status")
         async with self._sessions() as session:
             try:
@@ -143,9 +180,17 @@ class SqlAlchemyChatRepository:
                         update(Message)
                         .where(
                             Message.id == assistant_message_id,
-                            Message.status == "in_progress",
+                            Message.status.in_(("pending", "streaming")),
                         )
-                        .values(content="", status=status)
+                        .values(
+                            content="",
+                            status=status,
+                            provider=metadata.provider if metadata else None,
+                            model=metadata.model if metadata else None,
+                            latency_ms=metadata.latency_ms if metadata else None,
+                            input_tokens=metadata.input_tokens if metadata else None,
+                            output_tokens=metadata.output_tokens if metadata else None,
+                        )
                     )
             except SQLAlchemyError as exc:
                 raise PersistenceError from exc

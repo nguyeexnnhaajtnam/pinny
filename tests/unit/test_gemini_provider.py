@@ -5,7 +5,7 @@ import pytest
 
 from pinny.chat.errors import ProviderError
 from pinny.chat.gemini_provider import GeminiChatModel
-from pinny.chat.types import ChatMessage
+from pinny.chat.types import ChatMessage, GenerationResult, TextDelta
 from pinny.core.config import Settings
 
 
@@ -78,7 +78,11 @@ async def test_gemini_maps_history_streams_deltas_and_closes() -> None:
         ChatMessage(role="assistant", content="Hello"),
     ]
 
-    assert [item async for item in model.stream(messages, "user")] == ["hello ", "world"]
+    assert [item async for item in model.stream(messages, "user")] == [
+        TextDelta("hello "),
+        TextDelta("world"),
+        GenerationResult("gemini", "test-gemini"),
+    ]
     assert stream.closed
     assert models.kwargs["model"] == "test-gemini"
     assert models.kwargs["config"].system_instruction == "Be Pinny"

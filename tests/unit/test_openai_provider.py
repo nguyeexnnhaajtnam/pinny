@@ -8,7 +8,7 @@ from openai import APITimeoutError
 
 from pinny.chat.errors import ProviderConfigurationError, ProviderError
 from pinny.chat.openai_provider import OpenAIChatModel
-from pinny.chat.types import ChatMessage
+from pinny.chat.types import ChatMessage, GenerationResult, TextDelta
 from pinny.core.config import Settings
 
 
@@ -76,7 +76,13 @@ async def test_adapter_yields_only_text_deltas_and_closes_stream() -> None:
             SimpleNamespace(type="response.created"),
             SimpleNamespace(type="response.output_text.delta", delta="a"),
             SimpleNamespace(type="response.output_text.delta", delta="b"),
-            SimpleNamespace(type="response.completed"),
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(
+                    model="test-model",
+                    usage=SimpleNamespace(input_tokens=2, output_tokens=3),
+                ),
+            ),
         ]
     )
     responses = FakeResponses(stream)
@@ -87,7 +93,11 @@ async def test_adapter_yields_only_text_deltas_and_closes_stream() -> None:
         chunk async for chunk in model.stream([ChatMessage(role="user", content="hi")], "user-1")
     ]
 
-    assert chunks == ["a", "b"]
+    assert chunks == [
+        TextDelta("a"),
+        TextDelta("b"),
+        GenerationResult("openai", "test-model", 2, 3),
+    ]
     assert stream.closed
     assert responses.kwargs["stream"] is True
     assert responses.kwargs["store"] is False

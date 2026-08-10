@@ -1,44 +1,4 @@
-# Core AI Chat Specification
-
-## Purpose
-
-This capability lets a resolved Pinny user hold persistent, contextual AI conversations through a secure streaming API while preserving clear ownership and failure semantics.
-
-## Requirements
-
-### Requirement: Chat requests are validated and identity-safe
-The system MUST expose `POST /api/v1/chat` with a required non-empty `message` and an optional `conversation_id`, and MUST NOT accept a user identity from the public request payload.
-
-#### Scenario: Valid new-conversation request
-- **WHEN** the resolved current user submits a non-empty message without a conversation identifier
-- **THEN** the system MUST accept the request and create a conversation owned by that resolved user
-
-#### Scenario: Valid follow-up request
-- **WHEN** the resolved current user submits a non-empty message with a valid conversation identifier they own
-- **THEN** the system MUST accept the message as a follow-up in that conversation
-
-#### Scenario: Invalid request is rejected
-- **WHEN** a request has an empty or invalid message or a malformed conversation identifier
-- **THEN** the system MUST reject it with a structured validation error without creating a conversation or message
-
-#### Scenario: Request attempts to supply user identity
-- **WHEN** a request includes `user_id` or another unsupported public field
-- **THEN** the system MUST reject the request and MUST NOT use that value for ownership
-
-### Requirement: Current user identity is resolved behind a replaceable boundary
-The system MUST resolve a required current user identifier through a request identity abstraction before invoking chat behavior, and the chat application behavior MUST depend only on the resolved identifier rather than its source.
-
-#### Scenario: Development identity is resolved
-- **WHEN** the service runs in the documented Phase 1 development mode with a configured development user identifier
-- **THEN** the identity abstraction MUST return that non-empty identifier as the current user
-
-#### Scenario: Development identity is missing
-- **WHEN** Phase 1 development identity is enabled without a valid configured user identifier
-- **THEN** the system MUST fail clearly rather than create a conversation with a null or fabricated owner
-
-#### Scenario: Development identity is used in production
-- **WHEN** the configuration-backed development identity mechanism is selected for a production environment
-- **THEN** the system MUST reject the unsafe configuration as non-production behavior
+## ADDED Requirements
 
 ### Requirement: Runtime context is deterministic and non-persistent
 The system MUST resolve the current date, current datetime, timezone, and locale through a provider-neutral runtime-context boundary and MUST include that context in model input without persisting it as a user or assistant message.
@@ -85,6 +45,8 @@ The system MUST record the selected provider, model, latency, terminal generatio
 - **WHEN** generation fails or is cancelled
 - **THEN** the system MUST record the corresponding terminal generation status and available non-sensitive metadata
 
+## MODIFIED Requirements
+
 ### Requirement: Conversations and messages are durably persisted
 The system MUST persist every conversation with a non-null owner and timestamps, MUST persist accepted user messages, and MUST persist an assistant generation record whose state distinguishes `pending`, `streaming`, `completed`, `failed`, and `cancelled` outcomes.
 
@@ -92,13 +54,13 @@ The system MUST persist every conversation with a non-null owner and timestamps,
 - **WHEN** a valid chat request omits `conversation_id`
 - **THEN** the system MUST persist a new conversation owned by the resolved current user before generation begins
 
-#### Scenario: User message is persisted
-- **WHEN** a chat request is accepted for a new or existing conversation
-- **THEN** the system MUST persist the user message in that conversation before invoking the language model
-
 #### Scenario: User message and pending generation are persisted
 - **WHEN** a chat request is accepted for a new or existing conversation
 - **THEN** the system MUST atomically persist the completed user message and a pending assistant generation before invoking the language model
+
+#### Scenario: User message is persisted
+- **WHEN** a chat request is accepted for a new or existing conversation
+- **THEN** the system MUST persist the user message in that conversation before invoking the language model
 
 #### Scenario: Generation starts streaming
 - **WHEN** provider generation work begins
@@ -111,21 +73,6 @@ The system MUST persist every conversation with a non-null owner and timestamps,
 #### Scenario: Persistence fails before generation
 - **WHEN** the conversation, user message, or pending generation cannot be persisted
 - **THEN** the system MUST NOT invoke the language model and MUST return a structured service error
-
-### Requirement: Conversation access is owner-scoped
-The system MUST permit conversation history and follow-up access only when the persisted conversation owner matches the resolved current user.
-
-#### Scenario: Owner accesses conversation
-- **WHEN** the resolved current user references a conversation they own
-- **THEN** the system MUST load and use that conversation
-
-#### Scenario: Different user references conversation
-- **WHEN** the resolved current user references a conversation owned by another user
-- **THEN** the system MUST deny access without disclosing the other user's conversation content and MUST NOT persist the submitted message
-
-#### Scenario: Conversation does not exist
-- **WHEN** the resolved current user references an unknown conversation identifier
-- **THEN** the system MUST return a structured not-found error and MUST NOT persist the submitted message
 
 ### Requirement: Follow-up generations use conversation context
 The system MUST apply a configurable provider-neutral recent-message policy to completed persisted history, preserve chronological order, and place the accepted current user message after the selected history in model input.
@@ -197,7 +144,7 @@ The system MUST distinguish successful completion, provider failure, and client 
 - **THEN** the assistant generation MUST become `failed`, no partial content may be marked completed, and the client MUST receive a normalized failure outcome
 
 #### Scenario: Provider fails after partial content
-- **WHEN** the language model provider fails after one or more content deltas
+- **WHEN** the language model provider fails after one or more deltas
 - **THEN** the generation MUST become `failed`, the stream MUST terminate with an error event, and partial output MUST NOT be persisted as a completed assistant message
 
 #### Scenario: Client disconnects during generation
@@ -207,18 +154,3 @@ The system MUST distinguish successful completion, provider failure, and client 
 #### Scenario: Terminal cleanup is repeated
 - **WHEN** failure or cancellation cleanup runs more than once for the same generation
 - **THEN** the terminal transition MUST remain idempotent and MUST NOT overwrite a completed generation
-
-### Requirement: Language model credentials and errors are protected
-The system MUST load credentials for the configured language-model provider from server-side configuration, MUST keep provider integration replaceable, and MUST prevent credentials and sensitive provider details from reaching clients or plaintext logs.
-
-#### Scenario: Credential is configured
-- **WHEN** the service starts with valid credential and model configuration for the selected supported provider
-- **THEN** that provider MUST be able to authenticate without exposing its credential through the chat API
-
-#### Scenario: Credential is missing
-- **WHEN** chat service startup is attempted without the credential required by the selected provider
-- **THEN** the system MUST fail clearly during configuration validation or startup with sanitized diagnostics
-
-#### Scenario: Provider returns a sensitive error
-- **WHEN** the selected provider returns an error containing credentials or internal details
-- **THEN** the system MUST log only redacted diagnostic context and return a stable sanitized API or SSE error

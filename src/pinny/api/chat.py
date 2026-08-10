@@ -8,9 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
+from pinny.chat.context import ConversationContextBuilder
 from pinny.chat.identity import DevelopmentCurrentUserProvider
+from pinny.chat.prompt import PromptBuilder
 from pinny.chat.provider_factory import create_chat_model
 from pinny.chat.repository import SqlAlchemyChatRepository
+from pinny.chat.runtime_context import StandaloneRuntimeContextProvider
 from pinny.chat.service import ChatService
 from pinny.chat.types import PreparedChat
 from pinny.core.config import Settings, get_settings
@@ -37,7 +40,17 @@ def get_chat_service() -> ChatService:
     settings = get_settings()
     repository = SqlAlchemyChatRepository(session_factory, settings)
     model = create_chat_model(settings)
-    return ChatService(repository, model, settings.chat_max_context_characters)
+    return ChatService(
+        repository=repository,
+        model=model,
+        max_context_characters=settings.chat_max_context_characters,
+        runtime_context_provider=StandaloneRuntimeContextProvider(settings),
+        context_builder=ConversationContextBuilder(settings.chat_history_max_messages),
+        prompt_builder=PromptBuilder(),
+        generation_timeout=settings.chat_generation_timeout,
+        retry_attempts=settings.chat_retry_attempts,
+        retry_delay_seconds=settings.chat_retry_delay_seconds,
+    )
 
 
 def get_chat_service_factory() -> Callable[[], ChatService]:
@@ -58,11 +71,12 @@ async def event_stream(
     try:
         async for event in stream:
             if await request.is_disconnected():
-                await service.interrupt(prepared)
-                await stream.aclose()
                 return
             yield encode_event(event.event, event.data)
     finally:
+        # Safe after completion because repository terminal transitions are compare-and-set.
+        # Essential when the transport cancels this iterator before is_disconnected() is observed.
+        await service.interrupt(prepared)
         await stream.aclose()
 
 

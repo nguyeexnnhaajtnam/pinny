@@ -1,5 +1,7 @@
+import re
 from enum import StrEnum
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,7 +50,13 @@ class Settings(BaseSettings):
     )
     chat_max_output_tokens: int = Field(default=2048, ge=1)
     chat_max_context_characters: int = Field(default=100_000, ge=1)
+    chat_history_max_messages: int = Field(default=20, ge=1, le=200)
     chat_stale_generation_seconds: int = Field(default=300, ge=1)
+    chat_timezone: str = "Asia/Ho_Chi_Minh"
+    chat_locale: str = "vi-VN"
+    chat_generation_timeout: float = Field(default=60.0, gt=0, le=300)
+    chat_retry_attempts: int = Field(default=2, ge=1, le=5)
+    chat_retry_delay_seconds: float = Field(default=0.25, ge=0, le=10)
 
     @field_validator("llm_provider", mode="before")
     @classmethod
@@ -61,6 +69,24 @@ class Settings(BaseSettings):
         value = value.strip()
         if not value:
             raise ValueError("model must be non-empty")
+        return value
+
+    @field_validator("chat_timezone")
+    @classmethod
+    def validate_chat_timezone(cls, value: str) -> str:
+        value = value.strip()
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("PINNY_CHAT_TIMEZONE must be a valid IANA timezone") from exc
+        return value
+
+    @field_validator("chat_locale")
+    @classmethod
+    def validate_chat_locale(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2}|-[0-9]{3})?", value):
+            raise ValueError("PINNY_CHAT_LOCALE must be a valid locale identifier")
         return value
 
     @model_validator(mode="after")

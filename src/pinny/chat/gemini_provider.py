@@ -6,8 +6,16 @@ import httpx
 from google import genai
 from google.genai import errors, types
 
-from pinny.chat.errors import ProviderConfigurationError, ProviderError, ProviderTimeoutError
-from pinny.chat.types import ChatMessage
+from pinny.chat.errors import (
+    ProviderAuthenticationError,
+    ProviderConfigurationError,
+    ProviderError,
+    ProviderInvalidRequestError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
+from pinny.chat.types import ChatMessage, GenerationResult, StreamItem, TextDelta
 from pinny.core.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -27,12 +35,14 @@ class GeminiChatModel:
         self._model = settings.gemini_model
         self._max_output_tokens = settings.chat_max_output_tokens
 
-    async def stream(self, messages: list[ChatMessage], user_id: str) -> AsyncIterator[str]:
+    async def stream(self, messages: list[ChatMessage], user_id: str) -> AsyncIterator[StreamItem]:
         del user_id  # The neutral contract permits providers to ignore this identifier.
         system_instruction, contents = self._map_messages(messages)
         stream = None
         yielded_text = False
         terminal_reason: str | None = None
+        input_tokens: int | None = None
+        output_tokens: int | None = None
         try:
             stream = await self._client.models.generate_content_stream(
                 model=self._model,
@@ -46,25 +56,44 @@ class GeminiChatModel:
                 text = self._safe_text(chunk)
                 if text:
                     yielded_text = True
-                    yield text
+                    yield TextDelta(text)
                 terminal_reason = self._finish_reason(chunk) or terminal_reason
+                usage = getattr(chunk, "usage_metadata", None)
+                if usage is not None:
+                    input_tokens = getattr(usage, "prompt_token_count", input_tokens)
+                    output_tokens = getattr(usage, "candidates_token_count", output_tokens)
             unsuccessful_reason = terminal_reason and terminal_reason != "STOP"
             if not yielded_text or unsuccessful_reason:
                 raise ProviderError("Gemini generation did not complete")
+            yield GenerationResult(
+                provider="gemini",
+                model=self._model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
         except TimeoutError as exc:
             self._log_failure(exc)
             raise ProviderTimeoutError from exc
         except errors.APIError as exc:
             self._log_failure(exc)
-            if getattr(exc, "code", None) in {408, 504}:
+            code = getattr(exc, "code", None)
+            if code in {408, 504}:
                 raise ProviderTimeoutError from exc
+            if code in {401, 403}:
+                raise ProviderAuthenticationError from exc
+            if code == 429:
+                raise ProviderRateLimitError from exc
+            if code in {400, 404, 422}:
+                raise ProviderInvalidRequestError from exc
+            if code is not None and code >= 500:
+                raise ProviderUnavailableError from exc
             raise ProviderError from exc
         except httpx.TimeoutException as exc:
             self._log_failure(exc)
             raise ProviderTimeoutError from exc
         except httpx.HTTPError as exc:
             self._log_failure(exc)
-            raise ProviderError from exc
+            raise ProviderUnavailableError from exc
         except ProviderError:
             raise
         except Exception as exc:

@@ -22,15 +22,18 @@ def test_factory_selects_gemini(monkeypatch) -> None:
     assert create_chat_model(settings) is sentinel
 
 
-def test_factory_requires_active_provider_key() -> None:
-    settings = Settings(_env_file=None, llm_provider="gemini", openai_api_key=None)
+def test_factory_requires_active_provider_key(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("PINNY_GEMINI_API_KEY", raising=False)
+    settings = Settings(_env_file=None, llm_provider="gemini", gemini_api_key=None)
     with pytest.raises(ValueError, match="GEMINI_API_KEY"):
         create_chat_model(settings)
 
 
 def test_factory_returns_concrete_provider_types() -> None:
     assert isinstance(
-        create_chat_model(Settings(_env_file=None, openai_api_key="key")), OpenAIChatModel
+        create_chat_model(Settings(_env_file=None, llm_provider="openai", openai_api_key="key")),
+        OpenAIChatModel,
     )
     assert isinstance(
         create_chat_model(Settings(_env_file=None, llm_provider="gemini", gemini_api_key="key")),

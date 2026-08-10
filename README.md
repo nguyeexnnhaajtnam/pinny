@@ -23,6 +23,10 @@ Use `PINNY_OPENAI_API_KEY` for OpenAI or `GEMINI_API_KEY` for Gemini. Keep keys 
 or a deployment secret store; changing provider configuration requires a service restart.
 `PINNY_DEV_USER_ID` is a **non-production identity shortcut**; production configuration rejects
 the development identity provider. Replace it with trusted Pinus authentication before launch.
+Standalone runtime facts come from `PINNY_CHAT_TIMEZONE` (IANA) and `PINNY_CHAT_LOCALE`; they are
+added to prompts in memory and never stored as messages. `PINNY_CHAT_HISTORY_MAX_MESSAGES` bounds
+completed history. `PINNY_CHAT_GENERATION_TIMEOUT`, `PINNY_CHAT_RETRY_ATTEMPTS`, and
+`PINNY_CHAT_RETRY_DELAY_SECONDS` control finite provider-neutral timeout and pre-delta retries.
 
 Start the environment (migrations run before the API starts):
 
@@ -71,14 +75,23 @@ The strict schema rejects unknown fields, including `user_id`. The server resolv
 returns `text/event-stream` with JSON data in this order:
 
 - `conversation`: conversation and accepted user-message IDs.
-- `delta`: an ordered assistant text fragment.
+- `delta`: an ordered assistant text fragment with conversation and assistant-message IDs.
 - `completed`: emitted only after the full assistant message commits.
 - `error`: terminal sanitized failure after streaming begins; no `completed` follows.
 
 Before streaming, invalid input uses HTTP 422, unknown or differently owned conversations use
 404, overlapping turns use 409, excessive context uses 413, and unavailable provider or
-persistence dependencies use sanitized 503 errors. Failed and disconnected generations become
-`failed` or `interrupted`, never `completed`, and are excluded from future history.
+persistence dependencies use sanitized 503 errors. Assistant lifecycle is `pending` → `streaming`
+→ exactly one of `completed`, `failed`, or `cancelled`. Failed and disconnected generations are
+never completed and are excluded from future history.
+
+SSE exposes only provider-neutral `conversation`, `delta`, `completed`, and `error` events.
+Conversation events carry the accepted user-message ID; delta/error/completed events carry the
+assistant-message ID. Error codes include `provider_rate_limit`, `provider_timeout`,
+`provider_unavailable`, `provider_invalid_request`, `provider_authentication_failed`, and
+`provider_error`. Provider bodies, SDK exceptions, prompts, and credentials are never returned.
+Transient failures retry only before the first delta; invalid/auth/config/cancellation and
+post-delta failures never retry.
 
 ```console
 curl -N -H "Content-Type: application/json" -d '{"message":"Hello Pinny"}' http://localhost:8000/api/v1/chat
@@ -109,11 +122,13 @@ with `docker compose up -d --build`, and call the endpoint without putting a key
 
 ```console
 curl -N -H "Content-Type: application/json" -d '{"message":"Reply with one short sentence"}' http://localhost:8000/api/v1/chat
-docker compose exec postgres psql -U pinny -d pinny -c "SELECT role,status,content FROM messages ORDER BY created_at DESC LIMIT 2;"
+docker compose exec postgres psql -U pinny -d pinny -c "SELECT role,status,provider,model,latency_ms,input_tokens,output_tokens,content FROM messages ORDER BY created_at DESC LIMIT 2;"
 ```
 
-Expect a terminal `completed` SSE event and completed user/assistant rows. A provider error or
-disconnect must leave the assistant row `failed` or `interrupted`, never `completed`.
+Repeat once with OpenAI and once with Gemini, restarting after changing `LLM_PROVIDER`. Expect a
+terminal `completed` event and completed user/assistant rows; assistant metadata contains
+provider/model/latency and token usage when available. A provider error or disconnect must leave
+the assistant row `failed` or `cancelled`, never `completed`. Never record provider secrets.
 
 Validate downgrade behavior only against an empty disposable database:
 
